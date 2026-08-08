@@ -22,13 +22,11 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create Base Project Structure
-        run: |
-          flutter create --platforms=android --org com.example tv_ktv_build
-          cp -r tv_ktv_build/android ./
-          rm -rf tv_ktv_build
+      # 直接在当前根目录补全 android 原生框架
+      - name: Create Android Scaffold
+        run: flutter create . --platforms=android --org com.example.tvktv
 
-      - name: Install Dependencies
+      - name: Get Dependencies
         run: flutter pub get
 
       - name: Build APK
