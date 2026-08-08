@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,9 +33,8 @@ class KtvTvApp extends StatelessWidget {
 class SongItem {
   final String title;
   final String artist;
-  final String url;
 
-  SongItem({required this.title, required this.artist, required this.url});
+  SongItem({required this.title, required this.artist});
 }
 
 class KtvHomeScreen extends StatefulWidget {
@@ -47,8 +47,8 @@ class KtvHomeScreen extends StatefulWidget {
 class _KtvHomeScreenState extends State<KtvHomeScreen> {
   HttpServer? _server;
   String _localIp = '正在获取IP...';
-  int _port = 8080;
-  List<SongItem> _playlist = [];
+  final int _port = 8080;
+  final List<SongItem> _playlist = [];
   SongItem? _currentSong;
   bool _isAccompany = false;
 
@@ -69,22 +69,18 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
         }
       }
 
-      var handler = const shelf.Pipeline()
-          .addMiddleware(shelf.logRequests())
-          .addHandler((shelf.Request request) {
-        if (request.url.path == 'ws') {
-          return webSocketHandler((WebSocketChannel webSocket) {
-            webSocket.stream.listen((message) {
-              _handleClientMessage(message);
-            });
-          })(request);
-        }
+      var cascade = shelf.Cascade().add(webSocketHandler((WebSocketChannel webSocket) {
+        webSocket.stream.listen((message) {
+          _handleClientMessage(message);
+        });
+      })).add((shelf.Request request) {
         return shelf.Response.ok(_getMobileHtmlPage(), headers: {
           'content-type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
         });
       });
 
-      _server = await io.serve(handler, InternetAddress.anyIPv4, _port);
+      _server = await io.serve(cascade.handler, InternetAddress.anyIPv4, _port);
       setState(() {});
     } catch (e) {
       debugPrint('服务器启动失败: $e');
@@ -92,17 +88,20 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
   }
 
   void _handleClientMessage(dynamic message) {
-    // 简易逻辑：解析手机端发来的点歌指令
-    setState(() {
-      _playlist.add(SongItem(
-        title: '示范歌曲 ${DateTime.now().second}',
-        artist: '热门歌手',
-        url: '',
-      ));
-      if (_currentSong == null && _playlist.isNotEmpty) {
-        _currentSong = _playlist.removeAt(0);
+    try {
+      var data = jsonDecode(message.toString());
+      if (data['action'] == 'add_song') {
+        setState(() {
+          _playlist.add(SongItem(
+            title: data['title'] ?? '示范歌曲',
+            artist: data['artist'] ?? '热门歌手',
+          ));
+          if (_currentSong == null && _playlist.isNotEmpty) {
+            _currentSong = _playlist.removeAt(0);
+          }
+        });
       }
-    });
+    } catch (_) {}
   }
 
   void _nextSong() {
@@ -121,22 +120,41 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
 <html>
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>KTV 手机点歌台</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
-        button { background: #e91e63; color: white; border: none; padding: 15px 30px; font-size: 18px; border-radius: 25px; margin-top: 20px; cursor: pointer; }
+        body { font-family: -apple-system, sans-serif; background: #1a0033; color: white; text-align: center; padding: 20px; margin: 0; }
+        .card { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 16px; margin-top: 20px; }
+        button { background: linear-gradient(135deg, #ff007f, #7928ca); color: white; border: none; padding: 16px 32px; font-size: 18px; border-radius: 30px; font-weight: bold; width: 80%; cursor: pointer; box-shadow: 0 4px 15px rgba(255,0,127,0.4); margin: 10px 0; }
+        button:active { transform: scale(0.98); }
+        .status { color: #00f2fe; margin-top: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
-    <h2>🎤 欢迎使用 KTV 点歌台</h2>
-    <p>已成功连接到客厅电视</p>
-    <button onclick="requestSong()">点一首歌曲</button>
+    <h2>🎤 点歌控制台</h2>
+    <div class="card">
+        <p>已连接电视：<strong>$_localIp</strong></p>
+        <button onclick="sendSong('恭喜发财', '刘德华')">🎵 点歌：恭喜发财</button>
+        <button onclick="sendSong('海阔天空', 'Beyond')" style="background: linear-gradient(135deg, #0070f3, #00dfd8);">🎵 点歌：海阔天空</button>
+        <div id="msg" class="status">准备就绪</div>
+    </div>
     <script>
-        const ws = new WebSocket('ws://' + window.location.host + '/ws');
-        function requestSong() {
-            ws.send(JSON.stringify({action: 'add_song'}));
-            alert('已成功点歌！');
+        let ws;
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + window.location.host);
+            ws.onopen = () => { document.getElementById('msg').innerText = '✅ 已实时连接到电视'; };
+            ws.onclose = () => { setTimeout(connect, 1000); };
+        }
+        connect();
+
+        function sendSong(title, artist) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'add_song', title: title, artist: artist }));
+                document.getElementById('msg').innerText = '🎉 《' + title + '》已发送到电视！';
+            } else {
+                alert('连接中，请稍后再试...');
+            }
         }
     </script>
 </body>
@@ -157,7 +175,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 背景高斯模糊/渐变
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -169,7 +186,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
           ),
           Column(
             children: [
-              // 顶部状态栏
               Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Row(
@@ -184,11 +200,9 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                 ),
               ),
 
-              // 主体区域
               Expanded(
                 child: Row(
                   children: [
-                    // 左侧视频播放窗口 (占位)
                     Expanded(
                       flex: 6,
                       child: Container(
@@ -216,13 +230,11 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                       ),
                     ),
 
-                    // 右侧控制面板与扫码区
                     Expanded(
                       flex: 4,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // 扫码点歌卡片
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -231,7 +243,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                             ),
                             child: Column(
                               children: [
-                                if (_localIp.startsWith('1'))
+                                if (!_localIp.startsWith('正在'))
                                   QrImageView(
                                     data: connectUrl,
                                     version: QrVersions.auto,
@@ -251,7 +263,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                           ),
                           const SizedBox(height: 30),
 
-                          // 常用控制按钮组
                           Wrap(
                             spacing: 12,
                             runSpacing: 12,
