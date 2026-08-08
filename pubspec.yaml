@@ -12,10 +12,9 @@ dependencies:
   cupertino_icons: ^1.0.6
   qr_flutter: ^4.1.0
   shelf: ^1.4.1
-  shelf_io: ^1.0.4
   shelf_web_socket: ^2.0.0
   web_socket_channel: ^2.4.1
-  video_player: ^2.8.2 # 👈 新增视频播放插件
+  video_player: ^2.8.2
 
 dev_dependencies:
   flutter_test:
