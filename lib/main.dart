@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_web_socket/shelf_web_socket.dart';
+import 'package:video_player/video_player.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 void main() {
@@ -33,8 +34,13 @@ class KtvTvApp extends StatelessWidget {
 class SongItem {
   final String title;
   final String artist;
+  final String videoUrl; // MV 视频播放地址
 
-  SongItem({required this.title, required this.artist});
+  SongItem({
+    required this.title,
+    required this.artist,
+    required this.videoUrl,
+  });
 }
 
 class KtvHomeScreen extends StatefulWidget {
@@ -52,18 +58,33 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
   SongItem? _currentSong;
   bool _isAccompany = false;
 
+  VideoPlayerController? _videoController;
+  bool _isVideoLoading = false;
+
   final TextEditingController _searchController = TextEditingController();
+
+  // 内置示范曲库（使用开放的示例 MP4 MP3 测试视频链接）
   final List<SongItem> _mockMusicLibrary = [
-    SongItem(title: '海阔天空', artist: 'Beyond'),
-    SongItem(title: '光辉岁月', artist: 'Beyond'),
-    SongItem(title: '恭喜发财', artist: '刘德华'),
-    SongItem(title: '冰雨', artist: '刘德华'),
-    SongItem(title: '七里香', artist: '周杰伦'),
-    SongItem(title: '晴天', artist: '周杰伦'),
-    SongItem(title: '稻香', artist: '周杰伦'),
-    SongItem(title: '后来', artist: '刘若英'),
-    SongItem(title: '十年', artist: '陈奕迅'),
-    SongItem(title: '孤勇者', artist: '陈奕迅'),
+    SongItem(
+      title: '海阔天空',
+      artist: 'Beyond',
+      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    ),
+    SongItem(
+      title: '光辉岁月',
+      artist: 'Beyond',
+      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    ),
+    SongItem(
+      title: '恭喜发财',
+      artist: '刘德华',
+      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    ),
+    SongItem(
+      title: '七里香',
+      artist: '周杰伦',
+      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    ),
   ];
   List<SongItem> _tvSearchResults = [];
 
@@ -103,35 +124,71 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
     }
   }
 
+  void _playSong(SongItem song) async {
+    setState(() {
+      _currentSong = song;
+      _isVideoLoading = true;
+    });
+
+    await _videoController?.dispose();
+    _videoController = VideoPlayerController.networkUrl(Uri.parse(song.videoUrl));
+
+    try {
+      await _videoController!.initialize();
+      _videoController!.play();
+      _videoController!.addListener(() {
+        // 播放结束自动切换下一首
+        if (_videoController!.value.position >= _videoController!.value.duration &&
+            !_videoController!.value.isPlaying) {
+          _nextSong();
+        }
+      });
+    } catch (e) {
+      debugPrint('视频加载播放失败: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isVideoLoading = false;
+        });
+      }
+    }
+  }
+
   void _handleClientMessage(dynamic message) {
     try {
       var data = jsonDecode(message.toString());
       if (data['action'] == 'add_song') {
-        _addSongToPlaylist(SongItem(
+        var song = SongItem(
           title: data['title'] ?? '未知歌曲',
           artist: data['artist'] ?? '群星',
-        ));
+          videoUrl: data['videoUrl'] ?? 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+        );
+        _addSongToPlaylist(song);
       }
     } catch (_) {}
   }
 
   void _addSongToPlaylist(SongItem song) {
     setState(() {
-      _playlist.add(song);
-      if (_currentSong == null && _playlist.isNotEmpty) {
-        _currentSong = _playlist.removeAt(0);
+      if (_currentSong == null) {
+        _playSong(song);
+      } else {
+        _playlist.add(song);
       }
     });
   }
 
   void _nextSong() {
-    setState(() {
-      if (_playlist.isNotEmpty) {
-        _currentSong = _playlist.removeAt(0);
-      } else {
+    if (_playlist.isNotEmpty) {
+      var next = _playlist.removeAt(0);
+      _playSong(next);
+    } else {
+      _videoController?.dispose();
+      _videoController = null;
+      setState(() {
         _currentSong = null;
-      }
-    });
+      });
+    }
   }
 
   void _filterTvSongs(String keyword) {
@@ -154,7 +211,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KTV 手机搜索点歌台</title>
+    <title>KTV 手机点歌台</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #120024; color: white; margin: 0; padding: 15px; }
         .search-box { display: flex; gap: 8px; margin-bottom: 15px; }
@@ -177,16 +234,10 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
 
     <script>
         const songs = [
-            {title: '海阔天空', artist: 'Beyond'},
-            {title: '光辉岁月', artist: 'Beyond'},
-            {title: '恭喜发财', artist: '刘德华'},
-            {title: '冰雨', artist: '刘德华'},
-            {title: '七里香', artist: '周杰伦'},
-            {title: '晴天', artist: '周杰伦'},
-            {title: '稻香', artist: '周杰伦'},
-            {title: '后来', artist: '刘若英'},
-            {title: '十年', artist: '陈奕迅'},
-            {title: '孤勇者', artist: '陈奕迅'}
+            {title: '海阔天空', artist: 'Beyond', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'},
+            {title: '光辉岁月', artist: 'Beyond', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4'},
+            {title: '恭喜发财', artist: '刘德华', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'},
+            {title: '七里香', artist: '周杰伦', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4'}
         ];
 
         let ws;
@@ -209,7 +260,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                         <div class="song-title">\${song.title}</div>
                         <div class="song-artist">\${song.artist}</div>
                     </div>
-                    <button class="add-btn" onclick="sendSong('\${song.title}', '\${song.artist}')">点歌</button>
+                    <button class="add-btn" onclick="sendSong('\${song.title}', '\${song.artist}', '\${song.videoUrl}')">点歌</button>
                 `;
                 container.appendChild(item);
             });
@@ -222,9 +273,9 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
             renderSongs(filtered);
         }
 
-        function sendSong(title, artist) {
+        function sendSong(title, artist, videoUrl) {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: 'add_song', title: title, artist: artist }));
+                ws.send(JSON.stringify({ action: 'add_song', title: title, artist: artist, videoUrl: videoUrl }));
                 alert('已成功点歌：《' + title + '》');
             } else {
                 alert('网络连接中，请稍后再试');
@@ -241,6 +292,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
   @override
   void dispose() {
     _server?.close();
+    _videoController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -252,24 +304,41 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF2C004D), Color(0xFF140029)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+          // 背景 MV 视频播放层
+          if (_videoController != null && _videoController!.value.isInitialized)
+            SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _videoController!.value.size.width,
+                  height: _videoController!.value.size.height,
+                  child: VideoPlayer(_videoController!),
+                ),
+              ),
+            )
+          else
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF2C004D), Color(0xFF140029)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
               ),
             ),
-          ),
+
+          // 蒙版半透明遮罩（防止背景视频太亮影响看清UI）
+          Container(color: Colors.black.withOpacity(0.4)),
+
+          // 前景 UI 控制层
           Column(
             children: [
-              // 顶栏状态
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 child: Row(
                   children: [
                     Text(
-                      '当前播放: ${_currentSong?.title ?? "暂无播放"} (${_currentSong?.artist ?? "无"})',
+                      '当前播放: ${_currentSong?.title ?? "等待点歌..."} ${_currentSong != null ? "(${_currentSong!.artist})" : ""}',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
                     ),
                     const SizedBox(width: 20),
@@ -277,6 +346,16 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                       '已点歌曲: ${_playlist.length} 首',
                       style: const TextStyle(fontSize: 16, color: Colors.white70),
                     ),
+                    if (_isVideoLoading) ...[
+                      const SizedBox(width: 15),
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('加载MV中...', style: TextStyle(fontSize: 13, color: Colors.pinkAccent)),
+                    ],
                     const Spacer(),
                     const Icon(Icons.wifi, color: Colors.greenAccent),
                   ],
@@ -286,14 +365,14 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
               Expanded(
                 child: Row(
                   children: [
-                    // 左侧：电视端键盘/搜歌区
+                    // 左侧：电视端搜索与点歌区
                     Expanded(
-                      flex: 6,
+                      flex: 5,
                       child: Container(
                         margin: const EdgeInsets.only(left: 16, bottom: 16, right: 8),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.black38,
+                          color: Colors.black.withOpacity(0.6),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.white12),
                         ),
@@ -303,7 +382,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                               controller: _searchController,
                               onChanged: _filterTvSongs,
                               decoration: InputDecoration(
-                                hintText: '🔍 电视端搜索：输入歌名或歌手...',
+                                hintText: '🔍 输入歌名或歌手...',
                                 prefixIcon: const Icon(Icons.search, color: Colors.pinkAccent),
                                 filled: true,
                                 fillColor: Colors.white10,
@@ -336,9 +415,9 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                       ),
                     ),
 
-                    // 右侧：扫码区与电视切歌面板
+                    // 右侧：二维码与控制面板
                     Expanded(
-                      flex: 4,
+                      flex: 5,
                       child: Container(
                         margin: const EdgeInsets.only(right: 16, bottom: 16, left: 8),
                         child: Column(
@@ -347,7 +426,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
-                                color: Colors.white10,
+                                color: Colors.black.withOpacity(0.6),
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Column(
@@ -356,16 +435,16 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                                     QrImageView(
                                       data: connectUrl,
                                       version: QrVersions.auto,
-                                      size: 150.0,
+                                      size: 140.0,
                                       backgroundColor: Colors.white,
                                     )
                                   else
                                     const CircularProgressIndicator(),
                                   const SizedBox(height: 10),
-                                  const Text('📱 手机扫码搜索点歌', style: TextStyle(fontSize: 14)),
+                                  const Text('📱 扫码点歌', style: TextStyle(fontSize: 14)),
                                   Text(
                                     connectUrl,
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
                                   ),
                                 ],
                               ),
@@ -379,6 +458,8 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                                   onPressed: () {
                                     setState(() {
                                       _isAccompany = !_isAccompany;
+                                      // 控制音量模拟原/伴唱（如果有声道控制也可以在此扩展）
+                                      _videoController?.setVolume(_isAccompany ? 0.3 : 1.0);
                                     });
                                   },
                                   icon: Icon(_isAccompany ? Icons.subtitles_off : Icons.record_voice_over),
