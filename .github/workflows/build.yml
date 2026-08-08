@@ -30,10 +30,11 @@ jobs:
 
       - name: Fix Android Configuration and MinSdk
         run: |
-          # 允许明文 HTTP 网络请求
+          # 允许明文 HTTP 网络请求并注入 Android 网络权限
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/<manifest.*/<manifest xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android">\n<uses-permission android:name="android.permission.INTERNET"\/>\n<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>\n<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>/' android/app/src/main/AndroidManifest.xml
           
-          # 安全提升 minSdkVersion 到 21（同时兼容 Groovy 与 Kotlin DSL 语法）
+          # 提升 minSdkVersion 到 21
           find android/app/ -name "build.gradle*" -exec sed -i 's/minSdk = .*/minSdk = 21/g' {} +
           find android/app/ -name "build.gradle*" -exec sed -i 's/minSdkVersion .*/minSdkVersion 21/g' {} +
 
