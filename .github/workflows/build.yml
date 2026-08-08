@@ -22,9 +22,12 @@ jobs:
         with:
           channel: 'stable'
 
-      # 加上 --overwrite 强制补充/生成完整 Android 原生工程结构
+      # 安全补全 Android 目录，绝不覆盖已有代码
       - name: Create Android Scaffold
-        run: flutter create . --platforms=android --org com.example.tvktv --overwrite
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create . --platforms=android --org com.example.tvktv
+          fi
 
       - name: Get Dependencies
         run: flutter pub get
