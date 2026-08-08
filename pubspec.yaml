@@ -1,0 +1,21 @@
+name: tv_ktv
+description: A simple TV KTV app.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  media_kit: ^1.1.10
+  media_kit_video: ^1.1.10
+  qr_flutter: ^4.1.0
+  shelf: ^1.4.1
+  shelf_web_socket: ^2.0.0
+  web_socket_channel: ^3.0.0
+  http: ^1.2.0
+
+flutter:
+  uses-material-design: true
