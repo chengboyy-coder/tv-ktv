@@ -22,12 +22,17 @@ jobs:
         with:
           channel: 'stable'
 
-      # 安全补全 Android 目录，绝不覆盖已有代码
+      # 安全补充 Android 模版工程
       - name: Create Android Scaffold
         run: |
           if [ ! -d "android" ]; then
             flutter create . --platforms=android --org com.example.tvktv
           fi
+
+      # 自动注入网络明文传输权限（解决局域网打不开网页的问题）
+      - name: Enable Cleartext Traffic
+        run: |
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
       - name: Get Dependencies
         run: flutter pub get
