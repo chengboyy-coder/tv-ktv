@@ -62,22 +62,17 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
   bool _isVideoLoading = false;
   String? _playErrorMsg;
 
-  // 使用国内稳定 CDN 视频直链
+  // 使用兼容量最高的高清通用 MP4 测试源
   final List<SongItem> _mockMusicLibrary = [
     SongItem(
-      title: '海阔天空 (演示版)',
+      title: '海阔天空 (KTV高清版)',
       artist: 'Beyond',
-      videoUrl: 'https://v-cdn.zjol.com.cn/280443.mp4',
+      videoUrl: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
     ),
     SongItem(
-      title: '光辉岁月 (演示版)',
+      title: '光辉岁月 (KTV高清版)',
       artist: 'Beyond',
-      videoUrl: 'https://v-cdn.zjol.com.cn/276378.mp4',
-    ),
-    SongItem(
-      title: '恭喜发财 (演示版)',
-      artist: '刘德华',
-      videoUrl: 'https://v-cdn.zjol.com.cn/276379.mp4',
+      videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
     ),
   ];
   List<SongItem> _tvSearchResults = [];
@@ -140,16 +135,16 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
       _playErrorMsg = null;
     });
 
-    await _videoController?.dispose();
-    _videoController = null;
+    if (_videoController != null) {
+      await _videoController!.pause();
+      await _videoController!.dispose();
+      _videoController = null;
+    }
 
     try {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(song.videoUrl),
-        httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': 'https://www.bilibili.com/',
-        },
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
       );
 
       _videoController = controller;
@@ -162,12 +157,16 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
       });
 
       controller.play();
+      controller.setLooping(false);
+      
       controller.addListener(() {
         if (controller.value.hasError) {
-          setState(() {
-            _playErrorMsg = '视频播放出错';
-            _isVideoLoading = false;
-          });
+          if (mounted) {
+            setState(() {
+              _playErrorMsg = '视频解码失败，换一首试试';
+              _isVideoLoading = false;
+            });
+          }
         }
         if (controller.value.isInitialized &&
             controller.value.position >= controller.value.duration &&
@@ -180,7 +179,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
       if (mounted) {
         setState(() {
           _isVideoLoading = false;
-          _playErrorMsg = '无法播放该视频，请换一首';
+          _playErrorMsg = '视频播放失败: $e';
         });
       }
     }
