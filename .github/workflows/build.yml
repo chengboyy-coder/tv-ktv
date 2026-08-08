@@ -22,20 +22,20 @@ jobs:
         with:
           channel: 'stable'
 
-      # 在云端完整构建一个合规的 Flutter 根项目
-      - name: Bootstrap Complete Flutter Project
+      - name: Create Base Project Structure
         run: |
-          mkdir temp_build
-          cp pubspec.yaml temp_build/
-          cp -r lib temp_build/
-          cd temp_build
-          flutter create . --org com.example.tvktv --project-name tv_ktv
-          flutter pub get
-          flutter build apk --release --no-tree-shake-icons
-          cp build/app/outputs/flutter-apk/app-release.apk ../app-release.apk
+          flutter create --platforms=android --org com.example tv_ktv_build
+          cp -r tv_ktv_build/android ./
+          rm -rf tv_ktv_build
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: tv-ktv-apk
-          path: app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
