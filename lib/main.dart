@@ -34,7 +34,7 @@ class KtvTvApp extends StatelessWidget {
 class SongItem {
   final String title;
   final String artist;
-  final String videoUrl; // MV/视频直链地址
+  final String videoUrl;
 
   SongItem({
     required this.title,
@@ -60,25 +60,24 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
 
   VideoPlayerController? _videoController;
   bool _isVideoLoading = false;
+  String? _playErrorMsg;
 
-  final TextEditingController _searchController = TextEditingController();
-
-  // 默认精选推荐列表（公共测试直链，防止初始为空）
+  // 使用国内稳定 CDN 视频直链
   final List<SongItem> _mockMusicLibrary = [
     SongItem(
-      title: '海阔天空 (KTV版)',
+      title: '海阔天空 (演示版)',
       artist: 'Beyond',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+      videoUrl: 'https://v-cdn.zjol.com.cn/280443.mp4',
     ),
     SongItem(
-      title: '光辉岁月 (KTV版)',
+      title: '光辉岁月 (演示版)',
       artist: 'Beyond',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+      videoUrl: 'https://v-cdn.zjol.com.cn/276378.mp4',
     ),
     SongItem(
-      title: '恭喜发财 (KTV版)',
+      title: '恭喜发财 (演示版)',
       artist: '刘德华',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      videoUrl: 'https://v-cdn.zjol.com.cn/276379.mp4',
     ),
   ];
   List<SongItem> _tvSearchResults = [];
@@ -92,14 +91,30 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
 
   Future<void> _initServer() async {
     try {
-      for (var interface in await NetworkInterface.list()) {
-        for (var addr in interface.addresses) {
-          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-            _localIp = addr.address;
-            break;
+      String foundIp = '';
+      try {
+        var interfaces = await NetworkInterface.list(
+          includeLoopback: false,
+          type: InternetAddressType.IPv4,
+        );
+        for (var interface in interfaces) {
+          for (var addr in interface.addresses) {
+            if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+              if (!addr.address.startsWith('169.254')) {
+                foundIp = addr.address;
+                break;
+              }
+            }
           }
+          if (foundIp.isNotEmpty) break;
         }
+      } catch (e) {
+        debugPrint('获取IP失败: $e');
       }
+
+      setState(() {
+        _localIp = foundIp.isNotEmpty ? foundIp : '请检查 Wi-Fi 连接';
+      });
 
       var cascade = shelf.Cascade().add(webSocketHandler((WebSocketChannel webSocket) {
         webSocket.stream.listen((message) {
@@ -113,7 +128,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
       });
 
       _server = await io.serve(cascade.handler, InternetAddress.anyIPv4, _port);
-      setState(() {});
     } catch (e) {
       debugPrint('服务器启动失败: $e');
     }
@@ -123,32 +137,50 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
     setState(() {
       _currentSong = song;
       _isVideoLoading = true;
+      _playErrorMsg = null;
     });
 
     await _videoController?.dispose();
-    _videoController = VideoPlayerController.networkUrl(
-      Uri.parse(song.videoUrl),
-      httpHeaders: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Referer': 'https://www.bilibili.com/',
-      },
-    );
+    _videoController = null;
 
     try {
-      await _videoController!.initialize();
-      _videoController!.play();
-      _videoController!.addListener(() {
-        if (_videoController!.value.position >= _videoController!.value.duration &&
-            !_videoController!.value.isPlaying) {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(song.videoUrl),
+        httpHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': 'https://www.bilibili.com/',
+        },
+      );
+
+      _videoController = controller;
+      await controller.initialize();
+      
+      if (!mounted) return;
+
+      setState(() {
+        _isVideoLoading = false;
+      });
+
+      controller.play();
+      controller.addListener(() {
+        if (controller.value.hasError) {
+          setState(() {
+            _playErrorMsg = '视频播放出错';
+            _isVideoLoading = false;
+          });
+        }
+        if (controller.value.isInitialized &&
+            controller.value.position >= controller.value.duration &&
+            !controller.value.isPlaying) {
           _nextSong();
         }
       });
     } catch (e) {
-      debugPrint('视频加载播放失败: $e');
-    } finally {
+      debugPrint('视频加载失败: $e');
       if (mounted) {
         setState(() {
           _isVideoLoading = false;
+          _playErrorMsg = '无法播放该视频，请换一首';
         });
       }
     }
@@ -187,21 +219,9 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
       _videoController = null;
       setState(() {
         _currentSong = null;
+        _playErrorMsg = null;
       });
     }
-  }
-
-  void _filterTvSongs(String keyword) {
-    setState(() {
-      if (keyword.isEmpty) {
-        _tvSearchResults = List.from(_mockMusicLibrary);
-      } else {
-        _tvSearchResults = _mockMusicLibrary
-            .where((song) =>
-                song.title.contains(keyword) || song.artist.contains(keyword))
-            .toList();
-      }
-    });
   }
 
   String _getMobileHtmlPage() {
@@ -256,7 +276,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
             container.innerHTML = '<div class="loading">正在全网搜索 B站 KTV 资源...</div>';
 
             try {
-                // 调用 B站 官方公开发布 API
                 const query = encodeURIComponent(kw + ' KTV');
                 const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=video&keyword=' + query));
                 const rawData = await res.json();
@@ -292,7 +311,6 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
         async function parseAndSend(bvid, title, author) {
             alert('正在解析视频《' + title + '》，请稍候...');
             try {
-                // 解析 B 站 视频直链
                 const res = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://api.bilibili.com/x/web-interface/view?bvid=' + bvid));
                 const rawData = await res.json();
                 const data = JSON.parse(rawData.contents);
@@ -330,13 +348,12 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
   void dispose() {
     _server?.close();
     _videoController?.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    String connectUrl = 'http://$_localIp:$_port';
+    String connectUrl = _localIp.contains('.') ? 'http://$_localIp:$_port' : '';
 
     return Scaffold(
       body: Stack(
@@ -363,7 +380,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
               ),
             ),
 
-          Container(color: Colors.black.withOpacity(0.3)),
+          Container(color: Colors.black.withOpacity(0.35)),
 
           Column(
             children: [
@@ -392,8 +409,12 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.pinkAccent),
                       ),
                       const SizedBox(width: 6),
-                      const Text('加载MV中...', style: TextStyle(fontSize: 13, color: Colors.pinkAccent)),
+                      const Text('加载视频中...', style: TextStyle(fontSize: 13, color: Colors.pinkAccent)),
                     ],
+                    if (_playErrorMsg != null) ...[
+                      const SizedBox(width: 15),
+                      Text(_playErrorMsg!, style: const TextStyle(fontSize: 13, color: Colors.orangeAccent)),
+                    ]
                   ],
                 ),
               ),
@@ -456,7 +477,7 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                               ),
                               child: Column(
                                 children: [
-                                  if (!_localIp.startsWith('正在'))
+                                  if (connectUrl.isNotEmpty)
                                     QrImageView(
                                       data: connectUrl,
                                       version: QrVersions.auto,
@@ -464,12 +485,24 @@ class _KtvHomeScreenState extends State<KtvHomeScreen> {
                                       backgroundColor: Colors.white,
                                     )
                                   else
-                                    const CircularProgressIndicator(),
+                                    const SizedBox(
+                                      height: 140,
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            CircularProgressIndicator(),
+                                            SizedBox(height: 10),
+                                            Text('正在获取局域网IP...', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   const SizedBox(height: 10),
                                   const Text('📱 扫码打开手机全网点歌台', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                   Text(
-                                    connectUrl,
-                                    style: const TextStyle(fontSize: 14, color: Colors.cyanAccent),
+                                    connectUrl.isNotEmpty ? connectUrl : 'IP获取中，请确认连同一Wi-Fi',
+                                    style: const TextStyle(fontSize: 13, color: Colors.cyanAccent),
                                   ),
                                 ],
                               ),
