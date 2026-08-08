@@ -1,5 +1,5 @@
 name: tv_ktv
-description: A simple TV KTV app.
+description: "A new Flutter project."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,11 +9,18 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  cupertino_icons: ^1.0.6
   qr_flutter: ^4.1.0
   shelf: ^1.4.1
+  shelf_io: ^1.0.4
   shelf_web_socket: ^2.0.0
-  web_socket_channel: ^3.0.0
-  http: ^1.2.0
+  web_socket_channel: ^2.4.1
+  video_player: ^2.8.2 # 👈 新增视频播放插件
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
