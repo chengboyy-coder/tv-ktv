@@ -22,14 +22,24 @@ jobs:
         with:
           channel: 'stable'
 
+      # 自动补全 Android 脚手架文件
+      - name: Recreate Flutter Project Template
+        run: |
+          mkdir temp_app
+          cd temp_app
+          flutter create --org com.example tv_ktv
+          cp -r tv_ktv/android ../
+          cd ..
+          rm -rf temp_app
+
       - name: Install Dependencies
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --split-per-abi --no-tree-shake-icons
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: tv-ktv-apk
-          path: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
