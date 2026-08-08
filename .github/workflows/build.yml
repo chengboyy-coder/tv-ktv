@@ -22,17 +22,23 @@ jobs:
         with:
           channel: 'stable'
 
-      # 安全补充 Android 模版工程
+      # 1. 自动补充 Android 脚手架
       - name: Create Android Scaffold
         run: |
           if [ ! -d "android" ]; then
             flutter create . --platforms=android --org com.example.tvktv
           fi
 
-      # 自动注入网络明文传输权限（解决局域网打不开网页的问题）
-      - name: Enable Cleartext Traffic
+      # 2. 自动修正 minSdkVersion 提升到 21，并开启网络明文传输权限
+      - name: Fix Android Configuration
         run: |
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          
+          # 修改 build.gradle 确保 minSdk >= 21
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/minSdkVersion.*/minSdkVersion 21/' android/app/build.gradle
+            sed -i 's/flutter.minSdkVersion/21/' android/app/build.gradle
+          fi
 
       - name: Get Dependencies
         run: flutter pub get
